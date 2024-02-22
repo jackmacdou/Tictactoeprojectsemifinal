@@ -23,7 +23,7 @@
 
 \* - This entire lab must be checked off in person.  There is no `autotest`.
 
-\*\* - You must get your whole lab checked off, and submit all your work to Gradescope including a confirmation code if any, before the end of your lab section to avoid a late penalty.
+\*\* - You must get your whole lab checked off, and submit all your work to Gradescope before the end of your lab section to avoid a late penalty.
 
 ## Instructional Objectives
 - To understand the configuration and programming of the STM32 USART.
@@ -291,11 +291,11 @@ There is a great deal of things going on here. How should you debug it when it d
 > [!IMPORTANT]
 > There is no `autotest`, so you **must** demostrate all work by the end of your lab section.  If you do not complete it by then, take the late penalty and demonstrate the rest of the work in office hours.  
 >   
-> Add, commit and push it to your remote repository, and submit your GitHub repository to the [Lab 7]() assignment on Gradescope.  The autograder will decode your confirmation code, and you will receive a score proportional to the tests you passed.  **You will not receive credit for this lab if you do not submit your confirmation code in your repository to Gradescope.**
+> Add, commit and push it to your remote repository, and submit your GitHub repository to the [Lab 7]() assignment on Gradescope.  A timely submission is required to earn points on this lab, with the late penalty applied if you did not get checked off in your lab section.
 
 Please make sure to close all windows, log out of the machine (click on your name on the top bar, and click Log Out, or similar), take all your belongings with you, and **wait for a TA to confirm that you can leave.**.  They will ask you to check that you submitted your work, that you have logged out properly, and that your station is clean.  **Failure to do so will result in a penalty (cleanliness, late) for the lab currently running in that week.**
 
-If you did not manage to finish by the end of the lab, you should still submit the confirmation code to Gradescope, to which we will apply a late penalty on Brightspace.  Keep in mind that the late penalty period is only in effect from the time your lab section ends, to the beginning of your next lab section.  **After that, it is a zero on the lab.**
+If you did not manage to finish by the end of the lab, you should still submit your code to Gradescope, to which we will apply a late penalty on Brightspace.  You may get checked off for it in an office hours session after your lab section.  Keep in mind that the late penalty period is only in effect from the time your lab section ends, to the beginning of your next lab section.  **After that, it is a zero on the lab.**
 
 <hr>
   
