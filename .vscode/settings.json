@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "fifo.h": "c",
+        "tty.h": "c",
+        "stdio.h": "c",
+        "stm32f0xx.h": "c"
+    }
+}

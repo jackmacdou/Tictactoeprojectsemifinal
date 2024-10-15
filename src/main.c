@@ -23,8 +23,8 @@ void internal_clock();
 // Uncomment only one of the following to test each step
 //#define STEP1
 //#define STEP2
- #define STEP3
-// #define STEP4
+//#define STEP3
+#define STEP4
 
 void init_usart5() {
     // TODO
@@ -185,33 +185,79 @@ int main() {
 char serfifo [FIFOSIZE];
 int seroffset = 0;
 
+
 void enable_tty_interrupt(void) {
     // TODO
     //raise an interrupt every time the receive data register becomes not empty
+    USART5->CR1 |= USART_CR1_RXNEIE;
+    USART5->CR3 |= USART_CR3_DMAR;
+    NVIC_EnableIRQ(USART3_8_IRQn);
     //trigger a DMA operation every time the receive data register becomes not empty. Do this by enabling DMA mode for reception
     //both of these ^ are flag updates in the USART CR1 and CR3 (and NVIC ISER).
-    //Enable RCC clock for DMA controller 2
-    //Configure DMA 2_channel 2 for the following:
-    //CMAR should be set to the address of serfifo
-    //CPAR should be set to the address of USART5->RDR
-    //CNDTR should be set to FIFOSIZE
 
+    //Enable RCC clock for DMA controller 2 v
+    RCC->AHBENR |= RCC_AHBENR_DMA2EN;
+    DMA2->CSELR |= DMA2_CSELR_CH2_USART5_RX;
+    DMA2_Channel2->CCR &= ~DMA_CCR_EN;
+    //-> DMA channel 2 configuration goes here <-
+    DMA2_Channel2->CMAR = (uint32_t)serfifo;
+    DMA2_Channel2->CPAR = &USART5->RDR;
+    DMA2_Channel2->CNDTR = FIFOSIZE;
+    DMA2_Channel2->CCR &= ~(0b1<<4);
+    DMA2_Channel2->CCR &= ~(0b11<<1);
+    DMA2_Channel2->CCR &= ~(0b1111<<8);
+    DMA2_Channel2->CCR |= 0b1<<7;
+    //PINC SHOULD NOT BE SET, DOES THIS MEAN DISABLED OR JUST NOT SET AT ALL?
+    DMA2_Channel2->CCR &= ~(0b1<<6);
+    //^
+    //Activate circular transfers v [Variable is called CIRC not CIR, is this bad?]
+    DMA2_Channel2->CCR |= 0b1<<5;
+    DMA2_Channel2->CCR &= ~(0b1<<14);
+    DMA2_Channel2->CCR |= 0b11<<12;
+    DMA2_Channel2->CCR |=DMA_CCR_EN;
 }
 
 // Works like line_buffer_getchar(), but does not check or clear ORE nor wait on new characters in USART
 char interrupt_getchar() {
-    // TODO
+    USART_TypeDef *u = USART5;
+    // If we missed reading some characters, clear the overrun flag.
+    // Wait for a newline to complete the buffer.
+    while(fifo_newline(&input_fifo) == 0) {
+            asm volatile ("wfi");
+    }
+    // Return a character from the line buffer.
+    char ch = fifo_remove(&input_fifo);
+    return ch;
 }
 
 int __io_putchar(int c) {
     // TODO copy from STEP2
+    if (c == '\n'){
+        //if the character passes is a \n first write a \r to USART5->TDR v?
+        while (!(USART5->ISR & USART_ISR_TXE)){
+
+        }
+        USART5->TDR = '\r';
+    }
+    while(!(USART5->ISR & USART_ISR_TXE));
+    USART5->TDR = c;
+    return c;
 }
 
 int __io_getchar(void) {
     // TODO Use interrupt_getchar() instead of line_buffer_getchar()
+    return interrupt_getchar();
 }
 
 // TODO Copy the content for the USART5 ISR here
+void USART3_8_IRQHandler(){
+    while(DMA2_Channel2->CNDTR != sizeof serfifo - seroffset) {
+        if (!fifo_full(&input_fifo))
+            insert_echo_char(serfifo[seroffset]);
+        seroffset = (seroffset + 1) % sizeof serfifo;
+    }
+}
+
 // TODO Remember to look up for the proper name of the ISR function
 
 int main() {
