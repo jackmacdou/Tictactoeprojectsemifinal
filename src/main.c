@@ -22,8 +22,8 @@ void internal_clock();
 
 // Uncomment only one of the following to test each step
 //#define STEP1
-#define STEP2
-// #define STEP3
+//#define STEP2
+ #define STEP3
 // #define STEP4
 
 void init_usart5() {
@@ -138,7 +138,17 @@ int main() {
 #include "fifo.h"
 #include "tty.h"
 int __io_putchar(int c) {
-    // TODO Copy from your STEP2
+    // TODO
+    if (c == '\n'){
+        //if the character passes is a \n first write a \r to USART5->TDR v?
+        while (!(USART5->ISR & USART_ISR_TXE)){
+
+        }
+        USART5->TDR = '\r';
+    }
+    while(!(USART5->ISR & USART_ISR_TXE));
+    USART5->TDR = c;
+    return c;
 }
 
 int __io_getchar(void) {
