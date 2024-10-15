@@ -21,8 +21,8 @@ const char* username = "jwmacdou";
 void internal_clock();
 
 // Uncomment only one of the following to test each step
-#define STEP1
-// #define STEP2
+//#define STEP1
+#define STEP2
 // #define STEP3
 // #define STEP4
 
@@ -89,7 +89,7 @@ int __io_putchar(int c) {
     // TODO
     if (c == '\n'){
         //if the character passes is a \n first write a \r to USART5->TDR v?
-        while (~USART_ISR_TXE){
+        while (!(USART5->ISR & USART_ISR_TXE)){
 
         }
         USART5->TDR = '\r';
@@ -105,7 +105,7 @@ int __io_getchar(void) {
     // TODO
     //if the character read c is a carriage return ('\r'), change it to ('\n') v?
     if (c == '\r'){
-        while (~USART_ISR_TXE){
+        while (!(USART5->ISR & USART_ISR_TXE)){
 
         }
         USART5->TDR = '\n';
