@@ -17,6 +17,8 @@ const char* username = "jwmacdou";
 
 #include "stm32f0xx.h"
 #include <stdint.h>
+#include "commands.h"
+#include <stdio.h>
 
 void internal_clock();
 
@@ -24,7 +26,8 @@ void internal_clock();
 //#define STEP1
 //#define STEP2
 //#define STEP3
-#define STEP4
+//#define STEP4
+#define SHELL
 
 void init_usart5() {
     // TODO
@@ -258,12 +261,79 @@ void USART3_8_IRQHandler(){
     }
 }
 
-// TODO Remember to look up for the proper name of the ISR function
+void init_spi1_slow(){
+    SPI1->CR1 &= ~(0b111<<3);
+    SPI1->CR1 |= 0b111<<3;
+    SPI1->CR1 |= SPI_CR1_MSTR;
+    SPI1->CR2 &= ~(0b1111<<8);
+    SPI1->CR2 |= 0b111<<8;
+    SPI1->CR1 |= SPI_CR1_SSM;
+    SPI1->CR1 |= SPI_CR1_SSI;
+    SPI1->CR2 |= SPI_CR2_FRXTH;
+    SPI1->CR1 |= SPI_CR1_SPE;
+}
 
-int main() {
+void enable_sdcard(){
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    GPIOB->ODR &= ~(0b1<<2);
+    //set PB2 low
+}
+
+void disable_sdcard(){
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    GPIOB->ODR |= 0b1<<2;
+    //set PB2 high
+}
+
+void init_sdcard_io(){
+    init_spi1_slow();
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    GPIOB->MODER &= ~(0b11<<4);
+    GPIOB->MODER |= 0b01<<4;
+    disable_sdcard();
+}
+
+void sdcard_io_high_speed(){
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    SPI1->CR1 &= ~(0b111<<3);
+    SPI1->CR1 |= 1<<3;
+    SPI1->CR1 |= SPI_CR1_SPE;
+}
+
+init_lcd_spi(){
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    GPIOB->MODER &= ~(0b11<<16);
+    GPIOB->MODER &= ~(0b11<<22);
+    GPIOB->MODER &= ~(0b11<<28);
+    GPIOB->MODER |= 0b1<<16;
+    GPIOB->MODER |= 0b1<<22;
+    GPIOB->MODER |= 0b1<<28;
+    init_spi1_slow();
+    sdcard_io_high_speed();
+}
+
+void my_command_shell(void)
+{
+  char line[100];
+  int len = strlen(line);
+  puts("This is the STM32 command shell.");
+  for(;;) {
+      printf("> ");
+      fgets(line, 99, stdin);
+      line[99] = '\0';
+      len = strlen(line);
+      if (line[len-1] == '\n'){
+          line[len-1] = '\0';
+      }
+      parse_command(line);
+  }
+}
+
+/*int main() {
     internal_clock();
     init_usart5();
     enable_tty_interrupt();
+    command_shell();
 
     setbuf(stdin,0); // These turn off buffering; more efficient, but makes it hard to explain why first 1023 characters not dispalyed
     setbuf(stdout,0);
@@ -277,5 +347,209 @@ int main() {
         char c = getchar();
         putchar(c);
     }
+    
+}*/
+#endif
+#ifdef SHELL
+#include "commands.h"
+#include <stdio.h>
+
+#include "fifo.h"
+#include "tty.h"
+
+// TODO DMA data structures
+#define FIFOSIZE 16
+char serfifo [FIFOSIZE];
+int seroffset = 0;
+
+
+void enable_tty_interrupt(void) {
+    // TODO
+    //raise an interrupt every time the receive data register becomes not empty
+    USART5->CR1 |= USART_CR1_RXNEIE;
+    USART5->CR3 |= USART_CR3_DMAR;
+    NVIC_EnableIRQ(USART3_8_IRQn);
+    //trigger a DMA operation every time the receive data register becomes not empty. Do this by enabling DMA mode for reception
+    //both of these ^ are flag updates in the USART CR1 and CR3 (and NVIC ISER).
+
+    //Enable RCC clock for DMA controller 2 v
+    RCC->AHBENR |= RCC_AHBENR_DMA2EN;
+    DMA2->CSELR |= DMA2_CSELR_CH2_USART5_RX;
+    DMA2_Channel2->CCR &= ~DMA_CCR_EN;
+    //-> DMA channel 2 configuration goes here <-
+    DMA2_Channel2->CMAR = (uint32_t)serfifo;
+    DMA2_Channel2->CPAR = &USART5->RDR;
+    DMA2_Channel2->CNDTR = FIFOSIZE;
+    DMA2_Channel2->CCR &= ~(0b1<<4);
+    DMA2_Channel2->CCR &= ~(0b11<<1);
+    DMA2_Channel2->CCR &= ~(0b1111<<8);
+    DMA2_Channel2->CCR |= 0b1<<7;
+    //PINC SHOULD NOT BE SET, DOES THIS MEAN DISABLED OR JUST NOT SET AT ALL?
+    DMA2_Channel2->CCR &= ~(0b1<<6);
+    //^
+    //Activate circular transfers v [Variable is called CIRC not CIR, is this bad?]
+    DMA2_Channel2->CCR |= 0b1<<5;
+    DMA2_Channel2->CCR &= ~(0b1<<14);
+    DMA2_Channel2->CCR |= 0b11<<12;
+    DMA2_Channel2->CCR |=DMA_CCR_EN;
+}
+
+// Works like line_buffer_getchar(), but does not check or clear ORE nor wait on new characters in USART
+char interrupt_getchar() {
+    USART_TypeDef *u = USART5;
+    // If we missed reading some characters, clear the overrun flag.
+    // Wait for a newline to complete the buffer.
+    while(fifo_newline(&input_fifo) == 0) {
+            asm volatile ("wfi");
+    }
+    // Return a character from the line buffer.
+    char ch = fifo_remove(&input_fifo);
+    return ch;
+}
+
+int __io_putchar(int c) {
+    // TODO copy from STEP2
+    if (c == '\n'){
+        //if the character passes is a \n first write a \r to USART5->TDR v?
+        while (!(USART5->ISR & USART_ISR_TXE)){
+
+        }
+        USART5->TDR = '\r';
+    }
+    while(!(USART5->ISR & USART_ISR_TXE));
+    USART5->TDR = c;
+    return c;
+}
+
+int __io_getchar(void) {
+    // TODO Use interrupt_getchar() instead of line_buffer_getchar()
+    return interrupt_getchar();
+}
+
+// TODO Copy the content for the USART5 ISR here
+void USART3_8_IRQHandler(){
+    while(DMA2_Channel2->CNDTR != sizeof serfifo - seroffset) {
+        if (!fifo_full(&input_fifo))
+            insert_echo_char(serfifo[seroffset]);
+        seroffset = (seroffset + 1) % sizeof serfifo;
+    }
+}
+
+void init_spi1_slow(){
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+    GPIOB->MODER &= ~(0b111111<<6);
+    GPIOB->MODER |= 0b101010<<6;
+    GPIOB->AFR[0] &= ~(GPIO_AFRL_AFRL3);
+    GPIOB->AFR[0] &= ~(GPIO_AFRL_AFRL4);
+    GPIOB->AFR[0] &= ~(GPIO_AFRL_AFRL5);
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    SPI1->CR1 &= ~(0b111<<3);
+    SPI1->CR1 |= 0b111<<3;
+    SPI1->CR1 |= SPI_CR1_MSTR;
+    SPI1->CR2 |= 0b111<<8;
+    SPI1->CR2 &= ~(0b1000<<8);
+    SPI1->CR1 |= SPI_CR1_SSM;
+    SPI1->CR1 |= SPI_CR1_SSI;
+    SPI1->CR2 |= SPI_CR2_FRXTH;
+    SPI1->CR1 |= SPI_CR1_SPE;
+}
+
+void enable_sdcard(){
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    GPIOB->BRR = 0b1<<2;
+    //set PB2 low
+}
+
+void disable_sdcard(){
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    GPIOB->BSRR = 0b1<<2;
+    //set PB2 high
+}
+
+void init_sdcard_io(){
+    init_spi1_slow();
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    GPIOB->MODER &= ~(0b11<<4);
+    GPIOB->MODER |= 0b01<<4;
+    disable_sdcard();
+}
+
+void sdcard_io_high_speed(){
+    RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    SPI1->CR1 &= ~(0b111<<3);
+    SPI1->CR1 |= 1<<3;
+    SPI1->CR1 |= SPI_CR1_SPE;
+}
+
+init_lcd_spi(){
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    GPIOB->MODER &= ~(0b11<<16);
+    GPIOB->MODER &= ~(0b11<<22);
+    GPIOB->MODER &= ~(0b11<<28);
+    GPIOB->MODER |= 0b1<<16;
+    GPIOB->MODER |= 0b1<<22;
+    GPIOB->MODER |= 0b1<<28;
+    init_spi1_slow();
+    sdcard_io_high_speed();
+}
+
+void my_command_shell(void)
+{
+  char line[100];
+  int len = strlen(line);
+  puts("This is the STM32 command shell.");
+  for(;;) {
+      printf("> ");
+      fgets(line, 99, stdin);
+      line[99] = '\0';
+      len = strlen(line);
+      if (line[len-1] == '\n'){
+          line[len-1] = '\0';
+      }
+      parse_command(line);
+  }
+}
+
+int main() {
+    internal_clock();
+    init_usart5();
+    enable_tty_interrupt();
+    setbuf(stdin,0);
+    setbuf(stdout,0);
+    setbuf(stderr,0);
+    //prepare main graphic
+    LCD_Setup();
+    LCD_Clear(0000);
+    LCD_DrawFillRectangle(0,0,210,210,0x0f0f);
+    //LCD_DrawLine(0,100,200,100,0);
+    //draw grid
+    LCD_DrawLine(0,67,200,67,0);
+    LCD_DrawLine(0,133,200,133,0);
+    LCD_DrawLine(67,0,67,200,0);
+    LCD_DrawLine(133,0,133,200,0);
+    //draw X
+    int xposx = 2;
+    int xposy = 2;
+    int xline1 = 0 + 67*xposx;
+    int xline2 = 67 + 67*xposx;
+    int xline3 = 0 + 67*xposy;
+    int xline4 = 67 + 67*xposy;
+    LCD_DrawLine(xline1,xline3,xline2,xline4,0xf0f0);
+    LCD_DrawLine(xline1,xline4,xline2,xline3,0xf0f0);
+    //draw O
+    int oposx = 2;
+    int oposy = 2;
+    int oline1 = 15 + 67*oposx;
+    int oline2 = 47 + 67*oposx;
+    int oline3 = 15 + 67*oposy;
+    int oline4 = 47 + 67*oposy;
+    LCD_DrawLine(oline1,oline3,oline2,oline3,0x0ff0);
+    LCD_DrawLine(oline1,oline4,oline2,oline4,0x0ff0);
+    LCD_DrawLine(oline1,oline3,oline1,oline4,0x0ff0);
+    LCD_DrawLine(oline2,oline3,oline2,oline4,0x0ff0);
+    //command_shell();
+    
 }
 #endif

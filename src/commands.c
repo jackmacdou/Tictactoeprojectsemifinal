@@ -495,6 +495,10 @@ void mul(int argc, char *argv[])
   }
   printf("The product is %d\n", prod);
 }
+void bird(int argc, char *argv[]){
+    const char str[] = "/\_/\\n";
+    puts(str);
+}
 
 struct commands_t cmds[] = {
         { "append", append },
@@ -518,8 +522,17 @@ struct commands_t cmds[] = {
 
 // A weak definition that can be overridden by a better one.
 // Replace this with your own usercmds entirely.
-__attribute((weak)) struct commands_t usercmds[] = {
+/*__attribute((weak)) struct commands_t usercmds[] = {
         { 0, 0 }
+};*/
+
+// Define your bird command function here
+
+struct commands_t usercmds[] = {
+  { "add",    add },
+  { "mul",    mul },
+  // 🐦 - define the bird command pointer here 
+  { "bird",   bird},
 };
 
 void exec(int argc, char *argv[])
@@ -597,3 +610,5 @@ void command_shell(void)
         parse_command(line);
     }
 }
+
+
