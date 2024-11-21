@@ -768,8 +768,12 @@ void drawX(int xposx, int xposy){
     //draw X
     //init_spi1_slow();
     //sdcard_io_high_speed();
+
+    //pb8 Chip Select for TFTLCD
+    SPI1->CR1 &= ~SPI_CR1_SPE;
     SPI1->CR2 |= 0b111<<8;
     SPI1->CR2 &= ~(0b1000<<8);
+    SPI1->CR1 |= SPI_CR1_SPE;
     int xline1 = 0 + 67*xposx;
     int xline2 = 67 + 67*xposx;
     int xline3 = 0 + 67*xposy;
